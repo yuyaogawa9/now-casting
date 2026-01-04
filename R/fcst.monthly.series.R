@@ -1,46 +1,53 @@
-# fcst.monthly.series.R
+fcast.monthly.series <-
+  function(train_matrix = y,
+           h = 6,
+           transformation = 'level',
+           start_dt = as.Date("2025-09-01"),
+           lambda_mode = 0.1,
+           lambda_sd = 0.1,
+           alpha_mode = 1.5,
+           alpha_sd = 0.5,
+           n.lags = 12,
+           n.draw = 20000,
+           n.burn = 5000
+           ) {
 
-# This script forecasts monthly time series data using various forecasting techniques.
-# It includes functions for time series analysis, model fitting, and generating forecasts.
+  if (transformation == 'level') {
+    psi <- apply(train_matrix, 2, function(x) {
+      stats::var(diff(x), na.rm = TRUE)
+    })
+  } else {
+    psi <- "auto"
+  }
 
-# Load necessary libraries
-library(forecast)
-library(tidyverse)
+  priors <- BVAR::bv_priors(
+    mn = BVAR::bv_mn(
+      psi    = BVAR::bv_psi(mode = psi),
+      lambda = BVAR::bv_lambda(mode = lambda_mode, sd = lambda_sd),
+      alpha  = BVAR::bv_alpha(mode = alpha_mode,  sd = alpha_sd)
+    )
+  )
 
-# Function to load and preprocess data
-load_data <- function(file_path) {
-  data <- read.csv(file_path)
-  # Additional preprocessing steps can be added here
-  return(data)
+  bvar_fit <- BVAR::bvar(
+    train_matrix,
+    lags   = n.lags,        # standard for monthly macro data
+    n_draw = n.draw,
+    n_burn = n.burn,
+    priors = priors,
+    verbose = TRUE
+  )
+
+  fcst <- stats::predict(bvar_fit, horizon = h)
+
+  fcst_mean <- apply(fcst$fcast, c(2, 3), mean)
+
+  colnames(fcst_mean) <- fcst$variables
+
+  fcst_dt <- data.table(
+    date = seq(from = start_dt, by = "month", length.out = nrow(fcst_mean)),
+    fcst_mean
+  )
+
+  return(fcst_dt)
+
 }
-
-# Function to fit a time series model
-fit_time_series_model <- function(ts_data) {
-  model <- auto.arima(ts_data)
-  return(model)
-}
-
-# Function to generate forecasts
-generate_forecasts <- function(model, h = 12) {
-  forecasts <- forecast(model, h = h)
-  return(forecasts)
-}
-
-# Main execution
-# Load the data
-data <- load_data("../data/transformed_fred_data.csv")
-
-# Convert the data to a time series object
-ts_data <- ts(data$value, frequency = 12, start = c(2020, 1))  # Adjust start as necessary
-
-# Fit the time series model
-model <- fit_time_series_model(ts_data)
-
-# Generate forecasts for the next 12 months
-forecasts <- generate_forecasts(model)
-
-# Print the forecasts
-print(forecasts)
-
-# Optionally, plot the forecasts
-plot(forecasts)

@@ -1,33 +1,24 @@
-# Nowcasting GDP Script
+rm(list = ls()); gc()
+library(stats)
+library(data.table)
 
-# Load necessary libraries
-library(readr)  # For reading CSV files
-library(dplyr)  # For data manipulation
-library(forecast)  # For forecasting functions
-library(tidyr)  # For data tidying
+data <- fread("data/raw_fred_data.csv")
+scoring_data <- fread('data/quarterly_bvar_forecast_blended.csv')
+scoring_data <- scoring_data[1]
 
-# Load the trained models
-dyfactort_model <- readRDS("../models/dyfactort_model.rds")
+dfm_model <- readRDS('models/dyfactort_model.rds')
 
-# Load the transformed FRED data
-transformed_data <- read_csv("../data/transformed_fred_data.csv")
+X <- as.matrix(scoring_data[, !"date"])
+X_demean <- sweep(X, 2, dfm_model$center, `-`)
+X_scaled <- sweep(X_demean, 2, dfm_model$scale, `/`)
 
-# Function to generate GDP nowcasts
-generate_nowcast <- function(data, model) {
-  # Prepare the data for prediction
-  # This may involve selecting relevant features and transforming the data as needed
-  
-  # Generate predictions using the dynamic factor model
-  nowcast <- predict(model, newdata = data)
-  
-  return(nowcast)
-}
+F_q <- X_scaled %*% dfm_model$pca$rotation[, 1, drop = FALSE]
+F_q2 <- X_scaled %*% dfm_model$pca$rotation[, 2, drop = FALSE]
 
-# Generate the nowcast
-gdp_nowcast <- generate_nowcast(transformed_data, dyfactort_model)
+gdp_nowcast <- predict(dfm_model$gdp_model, newdata = data.frame(F_q = F_q, F_q2 = F_q2))
+gdp_nowcast <- exp(gdp_nowcast/100)
+gdp_lastQ <- data[!is.na(GDP) , .(GDP, date, max_date = max(date))][date == max_date, GDP]
 
-# Output the nowcast results
-write_csv(gdp_nowcast, "../data/gdp_nowcast_results.csv")
+growth <- (gdp_nowcast - gdp_lastQ) / gdp_nowcast
 
-# Print a message indicating completion
-cat("GDP nowcast has been generated and saved to data/gdp_nowcast_results.csv\n")
+print(growth)
