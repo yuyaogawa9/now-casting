@@ -1,0 +1,5 @@
+# Example R code to create the dyfactort_model.rds file
+# Assuming you have a trained dynamic factor model object named 'dyfactort_model'
+
+# Save the trained model
+saveRDS(dyfactort_model, file = "models/dyfactort_model.rds")
